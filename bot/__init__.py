@@ -12,12 +12,24 @@ Parameters
     <valhalla_user> - Username for valhalla basic authentication
     <valhalla_pass> - Password for valhalla basic authentication
 """
-import binascii
+from datetime import datetime
 import sys
 import urllib2
 
 from twisted.words.protocols import irc
 from twisted.internet import protocol, reactor
+
+
+def install_opener(uri, user, password):
+    """
+    Set up basic authentication url opener
+    """
+    passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+    passman.add_password(None, uri, user, password)
+    authhandler = urllib2.HTTPBasicAuthHandler(passman)
+    opener = urllib2.build_opener(authhandler)
+    #urllib2.install_opener(opener)
+    return opener
 
 
 class ValhallaBot(irc.IRCClient):
@@ -36,25 +48,37 @@ class ValhallaBot(irc.IRCClient):
         """
         POST message to django-vallhalla API using basic authentication.
         """
-#        post = urlencode()
-#        urllib2.urlopen('http://' + self.uri, )
-        self.msg(channel, msg)
-
+        speaker = user.split("!", 1)[0]
+        deed_date = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        deed_json = ('[{"pk": 1, "model": "valhalla.deed", "fields": {"deed_date": "%s", "text": "%s", "speaker": "%s", "user": 1}}]'
+                % (deed_date, msg, speaker))
+        request = urllib2.Request('http://' + self.valhalla_uri, deed_json)
+        request.add_header('Content-Type', 'application/json')
+        try:
+            self.opener.open(request)
+        except urllib2.HTTPError, e:
+            print e.msg
+            pass
 
 
 class ValhallaBotFactory(protocol.ClientFactory):
     protocol = ValhallaBot
 
-    def __init__(self, channel, nickname='valhalla_bot', uri, user, password):
+    def __init__(self, channel, nickname, uri, user, password):
         self.channel = channel
         self.nickname = nickname
         self.valhalla_uri = uri
-        # set up basic authentication url opener
-        passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
-        passman.add_password(None, uri, user, password)
-        authhandler = urllib2.HTTPBasicAuthHandler(passman)
-        opener = urllib2.build_opener(authhandler)
-        urllib2.install_opener(opener)
+        self.opener = install_opener('http://' + uri, user, password)
+
+    def buildProtocol(self, addr):
+        """
+        Overridden to add our valhalla uri to the ValhallaBot.
+        """
+        p = self.protocol()
+        p.factory = self
+        p.valhalla_uri = self.valhalla_uri
+        p.opener = self.opener
+        return p
 
     def clientConnectionLost(self, connector, reason):
         print "Lost connection (%s), reconnecting." % (reason,)
@@ -65,11 +89,17 @@ class ValhallaBotFactory(protocol.ClientFactory):
 
 
 if __name__ == "__main__":
+    # get commandline args
     chan = sys.argv[1]
     nick = sys.argv[2]
     uri = sys.argv[3]
     user = sys.argv[4]
     password = sys.argv[5]
+
+    # calls to urllib2.urlopen will use the installed opener
+    install_opener(uri, user, password)
+
+    # start bot
     reactor.connectTCP('irc.freenode.net', 6667, ValhallaBotFactory(
         '#' + chan, nick, uri, user, password))
     reactor.run()
