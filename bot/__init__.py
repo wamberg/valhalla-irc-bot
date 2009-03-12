@@ -18,6 +18,7 @@ import urllib2
 
 from twisted.words.protocols import irc
 from twisted.internet import protocol, reactor
+import simplejson
 
 
 def install_opener(uri, user, password):
@@ -28,7 +29,6 @@ def install_opener(uri, user, password):
     passman.add_password(None, uri, user, password)
     authhandler = urllib2.HTTPBasicAuthHandler(passman)
     opener = urllib2.build_opener(authhandler)
-    #urllib2.install_opener(opener)
     return opener
 
 
@@ -48,17 +48,27 @@ class ValhallaBot(irc.IRCClient):
         """
         POST message to django-vallhalla API using basic authentication.
         """
-        speaker = user.split("!", 1)[0]
-        deed_date = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-        deed_json = ('[{"pk": 1, "model": "valhalla.deed", "fields": {"deed_date": "%s", "text": "%s", "speaker": "%s", "user": 1}}]'
-                % (deed_date, msg, speaker))
-        request = urllib2.Request('http://' + self.valhalla_uri, deed_json)
-        request.add_header('Content-Type', 'application/json')
-        try:
-            self.opener.open(request)
-        except urllib2.HTTPError, e:
-            print e.msg
-            pass
+        if user and user.rfind('!') > 0:
+            speaker = user.split("!", 1)[0]
+            deed_date = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            # deed must be a list of one
+            deed = [{'pk': 1,
+                    'model': 'valhalla.deed',
+                    'fields': {
+                        'text': msg,
+                        'deed_date': deed_date,
+                        'speaker': speaker,
+                        'user': 1
+                    }
+            }]
+            deed_json = simplejson.dumps(deed)
+            request = urllib2.Request('http://' + self.valhalla_uri, deed_json)
+            request.add_header('Content-Type', 'application/json')
+            try:
+                self.opener.open(request)
+            except urllib2.HTTPError, e:
+                print e.msg
+                pass
 
 
 class ValhallaBotFactory(protocol.ClientFactory):
