@@ -46,6 +46,7 @@ class ValhallaBot(irc.IRCClient):
 
     def _msg_to_deed_json(self, user, msg):
         deed, msg = self._process_commands(msg)
+        if not msg: return None
         speaker = user.split("!", 1)[0]
         deed_date = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         # deed must be a list of one
@@ -63,6 +64,8 @@ class ValhallaBot(irc.IRCClient):
     def _process_commands(self, msg):
         if msg.startswith('twitter:'):
             return {'dispatch': ['twitter']}, msg[8:].strip()
+        elif msg.startswith('otr:'):
+            return {}, None
         return {}, msg
 
     def privmsg(self, user, channel, msg):
@@ -71,6 +74,7 @@ class ValhallaBot(irc.IRCClient):
         """
         if user and user.rfind('!') > 0:
             deed_json = self._msg_to_deed_json(user, msg)
+            if not deed_json: return None
             request = urllib2.Request('http://' + self.valhalla_uri, deed_json)
             request.add_header('Content-Type', 'application/json')
             try:
